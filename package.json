@@ -1,0 +1,75 @@
+{
+  "name": "ollama-cli",
+  "version": "1.0.0",
+  "description": "Local AI coding agent powered by Ollama — built with Bun and OpenTUI.",
+  "type": "module",
+  "main": "dist/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "bin": {
+    "ollama-cli": "dist/index.js"
+  },
+  "scripts": {
+    "dev": "bun run src/index.ts",
+    "build": "tsc",
+    "build:binary": "bun build --compile --outfile dist/ollama-cli-standalone ./src/index.ts",
+    "start": "bun run dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "bunx vitest run",
+    "test:watch": "bunx vitest",
+    "lint": "biome check src/",
+    "format:fix": "biome format --write src/",
+    "lint:fix": "biome check --fix src/",
+    "pre-commit": "lint-staged",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,mjs,cjs,json}": "biome check --write --no-errors-on-unmatched"
+  },
+  "keywords": [
+    "cli",
+    "agent",
+    "ollama",
+    "ai",
+    "coding",
+    "terminal",
+    "opentui"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@ai-sdk/mcp": "^1.0.25",
+    "@ai-sdk/openai": "^1.0.0",
+    "@ai-sdk/provider-utils": "^4.0.21",
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@opentui/core": "^0.1.88",
+    "@opentui/react": "^0.1.88",
+    "agent-desktop": "^0.1.11",
+    "ai": "^6.0.116",
+    "commander": "^12.1.0",
+    "diff": "^8.0.3",
+    "dotenv": "^16.6.1",
+    "react": "^19.2.4",
+    "semver": "^7.7.4",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.8",
+    "@types/diff": "^8.0.0",
+    "@types/node": "^22.19.15",
+    "@types/react": "^19.2.14",
+    "@types/semver": "^7.7.1",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "preferGlobal": true
+}
