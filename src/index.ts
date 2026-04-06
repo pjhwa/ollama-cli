@@ -1,10 +1,9 @@
-#!/usr/bin/env bun
-import { InvalidArgumentError, program } from "commander";
+#!/usr/bin/env node
+import { program } from "commander";
 import * as dotenv from "dotenv";
+import * as path from "path";
 import packageJson from "../package.json";
 import { Agent } from "./agent/agent";
-import { completeDelegation, failDelegation, loadDelegation } from "./agent/delegations";
-import { MODELS, normalizeModelId } from "./grok/models";
 import {
   createHeadlessJsonlEmitter,
   type HeadlessOutputFormat,
@@ -12,54 +11,45 @@ import {
   renderHeadlessChunk,
   renderHeadlessPrelude,
 } from "./headless/output";
-import { runTelegramHeadlessBridge } from "./telegram/headless-bridge";
+import { hasLocalOllama, listOllamaModels } from "./ollama/discovery";
+import type { RecommendationGoal } from "./ollama/models";
+import { recommendModel } from "./ollama/models";
+import { indexDirectory } from "./ollama/optimizer/rag";
+import { pullModel } from "./ollama/pull";
 import { startScheduleDaemon } from "./tools/schedule";
 import { processAtMentions } from "./utils/at-mentions.js";
 import { runScriptManagedUninstall } from "./utils/install-manager";
-import {
-  getApiKey,
-  getBaseURL,
-  getCurrentModel,
-  getCurrentSandboxMode,
-  getCurrentSandboxSettings,
-  mergeSandboxSettings,
-  type SandboxMode,
-  type SandboxSettings,
-  saveUserSettings,
-} from "./utils/settings";
+import { getCurrentModel, getOllamaBaseUrl, saveUserSettings } from "./utils/settings";
 import { runUpdate } from "./utils/update-checker";
-import { buildVerifyPrompt, getVerifyCliError } from "./verify/entrypoint";
 
 dotenv.config();
 
-const exitCleanlyOnSigterm = () => {
-  process.exit(0);
-};
-
-process.on("SIGTERM", exitCleanlyOnSigterm);
-
+process.on("SIGTERM", () => process.exit(0));
 process.on("uncaughtException", (err) => {
   console.error("Fatal:", err.message);
   process.exit(1);
 });
-
 process.on("unhandledRejection", (reason) => {
   console.error("Unhandled rejection:", reason);
   process.exit(1);
 });
 
+async function checkOllamaRunning(): Promise<void> {
+  const running = await hasLocalOllama(getOllamaBaseUrl());
+  if (!running) {
+    console.error("Error: Ollama is not running. Start it with: ollama serve");
+    process.exit(1);
+  }
+}
+
 async function startInteractive(
-  apiKey: string | undefined,
   baseURL: string,
   model: string,
   maxToolRounds: number,
-  batchApi: boolean,
-  sandboxMode: SandboxMode,
-  sandboxSettings: SandboxSettings,
   session?: string,
   initialMessage?: string,
 ) {
-  const agent = new Agent(apiKey, baseURL, model, maxToolRounds, { session, sandboxMode, sandboxSettings, batchApi });
+  const agent = new Agent(undefined, baseURL, model, maxToolRounds, { session });
   const { createCliRenderer } = await import("@opentui/core");
   const { createRoot } = await import("@opentui/react");
   const { createElement } = await import("react");
@@ -67,13 +57,8 @@ async function startInteractive(
 
   const renderer = await createCliRenderer({
     exitOnCtrlC: false,
-    // Lets terminals (Kitty, iTerm2, WezTerm, …) report Command as `super` on KeyEvent — needed for ⌘C in the TUI.
-    useKittyKeyboard: {
-      disambiguate: true,
-      alternateKeys: true,
-    },
+    useKittyKeyboard: { disambiguate: true, alternateKeys: true },
   });
-
   const onExit = () => {
     renderer.destroy();
     process.exit(0);
@@ -83,12 +68,12 @@ async function startInteractive(
     createElement(App, {
       agent,
       startupConfig: {
-        apiKey,
+        apiKey: undefined,
         baseURL,
         model,
         maxToolRounds,
-        sandboxMode,
-        sandboxSettings,
+        sandboxMode: "off",
+        sandboxSettings: {},
         version: packageJson.version,
       },
       initialMessage,
@@ -99,22 +84,13 @@ async function startInteractive(
 
 async function runHeadless(
   prompt: string,
-  apiKey: string,
   baseURL: string,
   model: string,
   maxToolRounds: number,
-  batchApi: boolean,
-  sandboxMode: SandboxMode,
-  sandboxSettings: SandboxSettings,
   format: HeadlessOutputFormat,
   session?: string,
 ) {
-  const agent = new Agent(apiKey, baseURL, model, maxToolRounds, {
-    session,
-    sandboxMode,
-    sandboxSettings,
-    batchApi,
-  });
+  const agent = new Agent(undefined, baseURL, model, maxToolRounds, { session });
   const prelude = renderHeadlessPrelude(format, agent.getSessionId() || undefined);
   if (prelude.stdout) process.stdout.write(prelude.stdout);
   if (prelude.stderr) process.stderr.write(prelude.stderr);
@@ -141,280 +117,177 @@ async function runHeadless(
   }
 }
 
-function changeDirectoryOrExit(directory: string | undefined) {
-  if (!directory) {
-    return;
-  }
-
-  try {
-    process.chdir(directory);
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`Cannot change to directory ${directory}: ${msg}`);
-    process.exit(1);
-  }
-}
-
-type CliOptions = Record<string, string | boolean | undefined>;
-
-function stringOption(value: string | boolean | undefined): string | undefined {
-  return typeof value === "string" ? value : undefined;
-}
-
-function collect(value: string, prev: string[]): string[] {
-  return [...prev, value];
-}
-
-function resolveCliSandboxMode(value: string | boolean | undefined): SandboxMode | undefined {
-  if (value === true) return "shuru";
-  if (value === false) return "off";
-  return undefined;
-}
-
-async function runBackgroundDelegation(jobPath: string, options: CliOptions) {
-  let output = "";
-
-  try {
-    const delegation = await loadDelegation(jobPath);
-    const apiKey = stringOption(options.apiKey) || getApiKey();
-    if (!apiKey) {
-      throw new Error("API key required. Set GROK_API_KEY, use --api-key, or save it to ~/.grok/user-settings.json.");
-    }
-
-    const baseURL = stringOption(options.baseUrl) || getBaseURL();
-    const model = normalizeModelId(stringOption(options.model) || delegation.model || getCurrentModel());
-    const maxToolRounds =
-      parseInt(stringOption(options.maxToolRounds) || String(delegation.maxToolRounds), 10) || delegation.maxToolRounds;
-    const sandboxMode = resolveCliSandboxMode(options.sandbox) || delegation.sandboxMode || getCurrentSandboxMode();
-    const sandboxSettings = mergeSandboxSettings(getCurrentSandboxSettings(), delegation.sandboxSettings);
-    const agent = new Agent(apiKey, baseURL, model, maxToolRounds, {
-      persistSession: false,
-      sandboxMode,
-      sandboxSettings,
-      batchApi: Boolean(delegation.batchApi ?? options.batchApi === true),
-    });
-    const result = await agent.runTaskRequest({
-      agent: delegation.agent,
-      description: delegation.description,
-      prompt: delegation.prompt,
-    });
-
-    output = (result.output || "").trim();
-
-    if (!result.success) {
-      await failDelegation(jobPath, result.output || result.error || "Background delegation failed.", output);
-      return;
-    }
-
-    await completeDelegation(jobPath, output, result.task?.summary);
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    try {
-      await failDelegation(jobPath, msg, output);
-    } catch {
-      // Best effort — background tasks should fail silently if persistence is unavailable.
-    }
-    process.exit(1);
-  }
-}
-
-function resolveConfig(options: CliOptions) {
-  const apiKey = stringOption(options.apiKey) || getApiKey();
-  const baseURL = stringOption(options.baseUrl) || getBaseURL();
-  const model = normalizeModelId(stringOption(options.model) || getCurrentModel());
-  const maxToolRounds = parseInt(stringOption(options.maxToolRounds) || "400", 10) || 400;
-  const sandboxMode = resolveCliSandboxMode(options.sandbox) || getCurrentSandboxMode();
-
-  const cliOverrides: SandboxSettings = {};
-  if (options.allowNet === true) cliOverrides.allowNet = true;
-  const allowHostValue = options.allowHost;
-  if (Array.isArray(allowHostValue) && allowHostValue.length > 0) {
-    cliOverrides.allowedHosts = allowHostValue as string[];
-    if (!cliOverrides.allowNet) cliOverrides.allowNet = true;
-  }
-  const portValue = options.port;
-  if (Array.isArray(portValue) && portValue.length > 0) {
-    cliOverrides.ports = portValue as string[];
-  }
-  const sandboxSettings = mergeSandboxSettings(getCurrentSandboxSettings(), cliOverrides);
-
-  if (typeof options.apiKey === "string") saveUserSettings({ apiKey: options.apiKey });
-  if (typeof options.model === "string") saveUserSettings({ defaultModel: normalizeModelId(options.model) });
-
-  return { apiKey, baseURL, model, maxToolRounds, sandboxMode, sandboxSettings };
-}
-
-function requireApiKey(apiKey: string | undefined): string {
-  if (!apiKey) {
-    console.error(
-      "Error: API key required. Set GROK_API_KEY env var, use --api-key, or save to ~/.grok/user-settings.json",
-    );
-    process.exit(1);
-  }
-
-  return apiKey;
-}
-
 function parseHeadlessOutputFormat(value: string): HeadlessOutputFormat {
-  if (isHeadlessOutputFormat(value)) {
-    return value;
-  }
-
-  throw new InvalidArgumentError(`Invalid headless format "${value}". Expected "text" or "json".`);
+  if (isHeadlessOutputFormat(value)) return value;
+  throw new Error(`Invalid format "${value}". Expected "text" or "json".`);
 }
+
+// ── Main command ──────────────────────────────────────────────────────────────
 
 program
-  .name("grok")
-  .description("AI coding agent powered by Grok — built with Bun and OpenTUI")
+  .name("ollama-cli")
+  .description("Local AI coding agent powered by Ollama — no API key required")
   .version(packageJson.version)
   .argument("[message...]", "Initial message to send")
-  .option("-k, --api-key <key>", "Grok API key")
-  .option("-u, --base-url <url>", "API base URL")
+  .option("-u, --base-url <url>", "Ollama base URL (default: http://localhost:11434)")
   .option("-m, --model <model>", "Model to use")
   .option("-d, --directory <dir>", "Working directory", process.cwd())
   .option("-p, --prompt <prompt>", "Run a single prompt headlessly")
-  .option("--verify", "Run the built-in verify flow headlessly")
   .option("--format <format>", "Headless output format: text or json", parseHeadlessOutputFormat, "text")
-  .option("--sandbox", "Run agent shell commands inside a Shuru sandbox")
-  .option("--no-sandbox", "Run agent shell commands directly on the host")
-  .option("--allow-net", "Enable network access inside the Shuru sandbox")
-  .option("--allow-host <pattern>", "Restrict sandbox network to specific hosts (repeatable)", collect, [])
-  .option("--port <mapping>", "Forward a host port to sandbox guest (HOST:GUEST, repeatable)", collect, [])
   .option("-s, --session <id>", "Continue a saved session by id, or use 'latest'")
-  .option("--background-task-file <path>", "Run a persisted background delegation")
   .option("--max-tool-rounds <n>", "Max tool execution rounds", "400")
-  .option("--batch-api", "Use xAI Batch API for model calls (async, lower cost)")
-  .option("--update", "Update grok to the latest version and exit")
+  .option("--no-cot", "Disable CoT forcing")
+  .option("--no-ultraplan", "Disable UltraPlan")
+  .option("--no-rag", "Disable RAG context injection")
+  .option("--update", "Update ollama-cli to the latest version and exit")
   .action(async (message: string[], options) => {
     if (options.update) {
-      console.log("Checking for updates...");
       const result = await runUpdate(packageJson.version);
       console.log(result.output);
       process.exit(result.success ? 0 : 1);
     }
 
-    changeDirectoryOrExit(options.directory);
-
-    if (options.backgroundTaskFile) {
-      await runBackgroundDelegation(options.backgroundTaskFile, options);
-      return;
-    }
-
-    const config = resolveConfig(options);
-
-    if (options.verify) {
-      const verifyError = getVerifyCliError({ hasPrompt: Boolean(options.prompt), hasMessageArgs: message.length > 0 });
-      if (verifyError) {
-        console.error(verifyError);
+    if (options.directory) {
+      try {
+        process.chdir(options.directory as string);
+      } catch (e: unknown) {
+        console.error(`Cannot change to directory ${options.directory}: ${e instanceof Error ? e.message : e}`);
         process.exit(1);
       }
-
-      await runHeadless(
-        buildVerifyPrompt(process.cwd()),
-        requireApiKey(config.apiKey),
-        config.baseURL,
-        config.model,
-        config.maxToolRounds,
-        options.batchApi === true,
-        config.sandboxMode,
-        config.sandboxSettings,
-        options.format,
-        options.session,
-      );
-      return;
     }
+
+    await checkOllamaRunning();
+
+    const baseURL = (options.baseUrl as string | undefined) || getOllamaBaseUrl();
+    const model = (options.model as string | undefined) || (await getCurrentModel());
+    const maxToolRounds = parseInt((options.maxToolRounds as string) || "400", 10) || 400;
+
+    if (typeof options.model === "string") saveUserSettings({ defaultModel: options.model });
 
     if (options.prompt) {
       await runHeadless(
-        options.prompt,
-        requireApiKey(config.apiKey),
-        config.baseURL,
-        config.model,
-        config.maxToolRounds,
-        options.batchApi === true,
-        config.sandboxMode,
-        config.sandboxSettings,
-        options.format,
-        options.session,
+        options.prompt as string,
+        baseURL,
+        model,
+        maxToolRounds,
+        options.format as HeadlessOutputFormat,
+        options.session as string | undefined,
       );
       return;
     }
 
     const initialMessage = message.length > 0 ? message.join(" ") : undefined;
-    await startInteractive(
-      config.apiKey,
-      config.baseURL,
-      config.model,
-      config.maxToolRounds,
-      options.batchApi === true,
-      config.sandboxMode,
-      config.sandboxSettings,
-      options.session,
-      initialMessage,
-    );
+    await startInteractive(baseURL, model, maxToolRounds, options.session as string | undefined, initialMessage);
   });
 
-program
-  .command("telegram-bridge")
-  .description("Start the Telegram remote-control bridge without opening the TUI")
-  .option("-k, --api-key <key>", "Grok API key")
-  .option("-u, --base-url <url>", "API base URL")
-  .option("-m, --model <model>", "Model to use")
-  .option("-d, --directory <dir>", "Working directory", process.cwd())
-  .option("--sandbox", "Run agent shell commands inside a Shuru sandbox")
-  .option("--no-sandbox", "Run agent shell commands directly on the host")
-  .option("--max-tool-rounds <n>", "Max tool execution rounds", "400")
-  .option("--log-file <path>", "Bridge log file", "telegram-remote-bridge.log")
-  .option("--pair-code-file <path>", "Pairing code file", "telegram-pair-code.txt")
+// ── models command ────────────────────────────────────────────────────────────
+
+const modelsCmd = program.command("models").description("Manage Ollama models");
+
+modelsCmd
+  .command("list")
+  .alias("ls")
+  .description("List installed models with recommendation")
+  .option("--goal <goal>", "Recommendation goal: latency, balanced, coding", "balanced")
   .action(async (options) => {
-    changeDirectoryOrExit(options.directory);
-    const config = resolveConfig(options);
-
-    process.off("SIGTERM", exitCleanlyOnSigterm);
-    try {
-      await runTelegramHeadlessBridge({
-        apiKey: requireApiKey(config.apiKey),
-        baseURL: config.baseURL,
-        model: config.model,
-        maxToolRounds: config.maxToolRounds,
-        sandboxMode: config.sandboxMode,
-        sandboxSettings: config.sandboxSettings,
-        logFile: options.logFile,
-        pairCodeFile: options.pairCodeFile,
-      });
-    } finally {
-      process.on("SIGTERM", exitCleanlyOnSigterm);
+    const baseURL = getOllamaBaseUrl();
+    const models = await listOllamaModels(baseURL);
+    if (models.length === 0) {
+      console.log("No models installed. Run: ollama-cli models pull <name>");
+      return;
     }
-  });
-
-program
-  .command("models")
-  .description("List available Grok models")
-  .action(() => {
-    console.log("\nAvailable Grok Models:\n");
-    for (const m of MODELS) {
-      const tags = [
-        m.reasoning ? "reasoning" : "non-reasoning",
-        m.multiAgent ? "multi-agent" : null,
-        m.responsesOnly ? "responses-only" : null,
-      ].filter(Boolean);
-      const suffix = tags.length > 0 ? ` (${tags.join(", ")})` : "";
-      console.log(`  \x1b[36m${m.id}\x1b[0m — ${m.name}${suffix}`);
-      console.log(
-        `    ${m.description} | ${formatContext(m.contextWindow)} context | $${m.inputPrice}/$${m.outputPrice} per 1M tokens`,
-      );
-      if ((m.aliases?.length ?? 0) > 0) {
-        console.log(`    aliases: ${(m.aliases ?? []).join(", ")}`);
-      }
+    const goal = (options.goal as string as RecommendationGoal) || "balanced";
+    const recommended = recommendModel(models, goal);
+    console.log(`\nInstalled Ollama Models (goal: ${goal}):\n`);
+    for (const m of models) {
+      const isRec = m.name === recommended?.name;
+      const tag = isRec ? " \x1b[32m<- recommended\x1b[0m" : "";
+      const size = m.sizeBytes ? ` (${(m.sizeBytes / 1e9).toFixed(1)}GB)` : "";
+      const family = m.family ? ` [${m.family}]` : "";
+      console.log(`  \x1b[36m${m.name}\x1b[0m${size}${family}${tag}`);
     }
     console.log();
   });
 
+modelsCmd
+  .command("pull <name>")
+  .description("Download a model from Ollama registry")
+  .action(async (name: string) => {
+    console.log(`Pulling ${name}...`);
+    let lastStatus = "";
+    await pullModel(
+      name,
+      (progress) => {
+        const pct =
+          progress.total && progress.completed ? ` ${Math.round((progress.completed / progress.total) * 100)}%` : "";
+        const status = `${progress.status}${pct}`;
+        if (status !== lastStatus) {
+          process.stdout.write(`\r${status}    `);
+          lastStatus = status;
+        }
+      },
+      getOllamaBaseUrl(),
+    );
+    console.log(`\n${name} pulled successfully.`);
+    saveUserSettings({ defaultModel: name });
+  });
+
+modelsCmd
+  .command("recommend [goal]")
+  .description("Recommend the best installed model (latency | balanced | coding)")
+  .action(async (goal?: string) => {
+    const normalizedGoal = (
+      ["latency", "balanced", "coding"].includes(goal ?? "") ? goal : "balanced"
+    ) as RecommendationGoal;
+    const models = await listOllamaModels(getOllamaBaseUrl());
+    const rec = recommendModel(models, normalizedGoal);
+    if (!rec) {
+      console.log("No suitable models found. Install one with: ollama pull <name>");
+      return;
+    }
+    console.log(`\nRecommended for ${normalizedGoal}: \x1b[36m${rec.name}\x1b[0m`);
+    console.log(`Use it: ollama-cli -m ${rec.name}\n`);
+  });
+
+// ── rag command ───────────────────────────────────────────────────────────────
+
+const ragCmd = program.command("rag").description("Manage RAG codebase index");
+
+ragCmd
+  .command("index [dirs...]")
+  .description("Index directories for RAG context injection")
+  .action(async (dirs: string[]) => {
+    const targets = dirs.length > 0 ? dirs : [process.cwd()];
+    const baseURL = getOllamaBaseUrl();
+    for (const dir of targets) {
+      console.log(`Indexing ${path.resolve(dir)}...`);
+      await indexDirectory(path.resolve(dir), baseURL);
+      console.log("  Done");
+    }
+    console.log("RAG index updated. Re-run after code changes to refresh.");
+    saveUserSettings({ optimizer: { enableRag: true } });
+  });
+
+ragCmd
+  .command("stats")
+  .description("Show RAG index statistics")
+  .action(async () => {
+    const { loadIndex } = await import("./ollama/optimizer/rag");
+    const chunks = loadIndex();
+    if (chunks.length === 0) {
+      console.log("No RAG index found. Run: ollama-cli rag index");
+      return;
+    }
+    const files = new Set(chunks.map((c: { path: string }) => c.path)).size;
+    console.log(`\nRAG Index Stats:\n  Files: ${files}\n  Chunks: ${chunks.length}\n`);
+  });
+
+// ── Other commands ────────────────────────────────────────────────────────────
+
 program
   .command("update")
-  .description("Update Grok to the latest release")
+  .description("Update ollama-cli to the latest release")
   .action(async () => {
-    console.log("Checking for updates...");
     const result = await runUpdate(packageJson.version);
     console.log(result.output);
     process.exit(result.success ? 0 : 1);
@@ -422,17 +295,17 @@ program
 
 program
   .command("uninstall")
-  .description("Remove a script-installed Grok binary and optional data")
-  .option("--dry-run", "Show what would be removed without removing it")
-  .option("--force", "Skip the confirmation prompt")
-  .option("--keep-config", "Keep ~/.grok config files")
-  .option("--keep-data", "Keep ~/.grok data files")
+  .description("Remove ollama-cli binary and optional data")
+  .option("--dry-run")
+  .option("--force")
+  .option("--keep-config")
+  .option("--keep-data")
   .action(async (options) => {
     const result = await runScriptManagedUninstall({
-      dryRun: options.dryRun === true,
-      force: options.force === true,
-      keepConfig: options.keepConfig === true,
-      keepData: options.keepData === true,
+      dryRun: !!options.dryRun,
+      force: !!options.force,
+      keepConfig: !!options.keepConfig,
+      keepData: !!options.keepData,
     });
     console.log(result.output);
     process.exit(result.success ? 0 : 1);
@@ -440,28 +313,17 @@ program
 
 program
   .command("daemon")
-  .description("Start the schedule daemon to run scheduled tasks")
-  .option("--background", "Detach and run in the background")
+  .description("Start the schedule daemon")
+  .option("--background")
   .action(async (options) => {
     if (options.background) {
       const result = await startScheduleDaemon(process.cwd());
-      console.log(
-        result.alreadyRunning
-          ? `Schedule daemon already running (pid: ${result.status.pid ?? "unknown"}).`
-          : `Schedule daemon started in the background (pid: ${result.pid ?? "unknown"}).`,
-      );
+      console.log(result.alreadyRunning ? "Daemon already running." : "Daemon started.");
       return;
     }
-
-    process.off("SIGTERM", exitCleanlyOnSigterm);
+    process.off("SIGTERM", () => process.exit(0));
     const { SchedulerDaemon } = await import("./daemon/scheduler");
-    const daemon = new SchedulerDaemon();
-    await daemon.start();
+    await new SchedulerDaemon().start();
   });
 
 program.parse();
-
-function formatContext(tokens: number): string {
-  if (tokens >= 1_000_000) return `${tokens / 1_000_000}M`;
-  return `${tokens / 1_000}K`;
-}

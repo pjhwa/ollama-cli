@@ -52,6 +52,17 @@ async function simpleEmbedding(text: string): Promise<number[]> {
   return Object.values(vec).slice(0, 384);
 }
 
+export function loadIndex(indexPath?: string): Array<{ path: string; text: string; embedding: number[] }> {
+  const file = indexPath ?? RAG_INDEX_FILE;
+  if (!fs.existsSync(file)) return [];
+  try {
+    const data = JSON.parse(fs.readFileSync(file, "utf-8")) as RAGIndex;
+    return data.chunks ?? [];
+  } catch {
+    return [];
+  }
+}
+
 export async function indexDirectory(rootDir: string, baseUrl?: string): Promise<void> {
   const chunks: Array<{ path: string; text: string; embedding: number[] }> = [];
   const tsFiles = findFiles(rootDir, ".ts");
