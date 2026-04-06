@@ -1,4 +1,4 @@
-import type { McpRemoteTransport } from "../utils/settings";
+import type { McpTransport as McpRemoteTransport } from "../utils/settings";
 
 export interface McpCatalogEntry {
   id: string;

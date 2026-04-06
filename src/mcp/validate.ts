@@ -1,4 +1,4 @@
-import type { McpRemoteTransport, McpServerConfig } from "../utils/settings";
+import type { McpTransport as McpRemoteTransport, McpServerConfig } from "../utils/settings";
 
 export function isRemoteTransport(value: string): value is McpRemoteTransport {
   return value === "http" || value === "sse";

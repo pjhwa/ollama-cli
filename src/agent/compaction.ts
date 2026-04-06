@@ -1,5 +1,5 @@
 import { generateText, type ModelMessage } from "ai";
-import { resolveModelRuntime, type XaiProvider } from "../grok/client";
+import { type OllamaProvider, resolveModelRuntime } from "../ollama/client";
 import { containsEncryptedReasoning } from "./reasoning";
 
 export interface CompactionSettings {
@@ -391,7 +391,7 @@ export function serializeConversation(messages: ModelMessage[]): string {
 }
 
 async function summarizeConversation(
-  provider: XaiProvider,
+  provider: OllamaProvider,
   modelId: string,
   messages: ModelMessage[],
   reserveTokens: number,
@@ -416,23 +416,21 @@ async function summarizeConversation(
 
   const runtime = resolveModelRuntime(provider, modelId);
   const { text } = await generateText({
-    model: runtime.model,
+    // biome-ignore lint/suspicious/noExplicitAny: Ollama SDK returns LanguageModelV1, cast required
+    model: runtime.model as any,
     system: SUMMARIZATION_SYSTEM_PROMPT,
     prompt: promptParts.filter(Boolean).join("\n\n"),
     abortSignal: signal,
     maxRetries: 0,
     temperature: 0.2,
-    ...(runtime.modelInfo?.supportsMaxOutputTokens === false
-      ? {}
-      : { maxOutputTokens: Math.max(512, Math.floor(reserveTokens * 0.8)) }),
-    ...(runtime.providerOptions ? { providerOptions: runtime.providerOptions } : {}),
+    maxOutputTokens: Math.max(512, Math.floor(reserveTokens * 0.8)),
   });
 
   return text.trim();
 }
 
 export async function generateCompactionSummary(
-  provider: XaiProvider,
+  provider: OllamaProvider,
   modelId: string,
   preparation: PreparedCompaction,
   customInstructions?: string,
