@@ -1,156 +1,97 @@
 import * as fs from "fs";
 import * as path from "path";
-import { getOllamaBaseUrl } from "../discovery";
 
-export const RAG_INDEX_FILE = ".ollama-cli-rag-index.json";
-const RAG_EMBED_MODEL = "nomic-embed-text";
-const RAG_CHUNK_SIZE = 500;
-const RAG_CHUNK_OVERLAP = 100;
-const RAG_TOP_K = 5;
-const RAG_THRESHOLD = 0.3;
+export const RAG_INDEX_FILE = ".rag-index.json";
 
-export interface RagChunk {
-  path: string;
-  text: string;
-  embedding: number[];
-  mtime: number;
-}
-
-export interface ScoredChunk {
+export interface CodeChunk {
   path: string;
   text: string;
   score: number;
 }
 
 export function cosineSimilarity(a: number[], b: number[]): number {
-  if (a.length === 0 || b.length === 0) return 0;
-  const dot = a.reduce((sum, ai, i) => sum + ai * (b[i] ?? 0), 0);
-  const normA = Math.sqrt(a.reduce((sum, ai) => sum + ai * ai, 0));
-  const normB = Math.sqrt(b.reduce((sum, bi) => sum + bi * bi, 0));
-  if (normA === 0 || normB === 0) return 0;
-  return dot / (normA * normB);
+  if (a.length !== b.length) return 0;
+  const dotProduct = a.reduce((sum, av, i) => sum + av * b[i], 0);
+  const magnitudeA = Math.sqrt(a.reduce((sum, av) => sum + av * av, 0));
+  const magnitudeB = Math.sqrt(b.reduce((sum, bv) => sum + bv * bv, 0));
+  if (magnitudeA === 0 || magnitudeB === 0) return 0;
+  return dotProduct / (magnitudeA * magnitudeB);
 }
 
-export function chunkText(text: string, size = RAG_CHUNK_SIZE, overlap = RAG_CHUNK_OVERLAP): string[] {
+export function chunkText(text: string, chunkSize: number, overlap: number): string[] {
   const chunks: string[] = [];
-  let start = 0;
-  while (start < text.length) {
-    chunks.push(text.slice(start, start + size));
-    start += size - overlap;
-    if (start >= text.length) break;
+  if (text.length <= chunkSize) {
+    return [text];
+  }
+  for (let i = 0; i < text.length; i += chunkSize - overlap) {
+    chunks.push(text.slice(i, i + chunkSize));
   }
   return chunks;
 }
 
-async function embed(text: string, baseUrl: string): Promise<number[]> {
-  for (const [endpoint, body] of [
-    ["/api/embed", { model: RAG_EMBED_MODEL, input: text }] as const,
-    ["/api/embeddings", { model: RAG_EMBED_MODEL, prompt: text }] as const,
-  ]) {
-    try {
-      const resp = await fetch(`${getOllamaBaseUrl(baseUrl)}${endpoint}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(15_000),
-      });
-      if (!resp.ok) continue;
-      const data = (await resp.json()) as { embeddings?: number[][]; embedding?: number[] };
-      const emb = (data.embeddings ?? [[]])[0] ?? data.embedding ?? [];
-      if (emb.length > 0) return emb;
-    } catch {
-      /* try next endpoint */
-    }
-  }
-  return [];
-}
-
-export function loadIndex(indexPath: string): RagChunk[] {
-  try {
-    if (!fs.existsSync(indexPath)) return [];
-    return JSON.parse(fs.readFileSync(indexPath, "utf-8")) as RagChunk[];
-  } catch {
-    return [];
-  }
-}
-
-export function saveIndex(indexPath: string, chunks: RagChunk[]): void {
-  fs.writeFileSync(indexPath, JSON.stringify(chunks, null, 2));
-}
-
-const INDEXABLE_EXTS = new Set([".ts", ".tsx", ".js", ".jsx", ".py", ".rs", ".go", ".java", ".c", ".cpp", ".h", ".md"]);
-const SKIP_DIRS = new Set([".git", "node_modules", "target", "__pycache__", ".venv", "dist"]);
-
-export async function indexDirectory(
-  dir: string,
-  baseUrl: string,
-  indexPath = RAG_INDEX_FILE,
-  onFile?: (filePath: string) => void,
-): Promise<void> {
-  const existing = loadIndex(indexPath);
-  const chunkMap = new Map<string, RagChunk[]>();
-  for (const c of existing) {
-    const arr = chunkMap.get(c.path) ?? [];
-    arr.push(c);
-    chunkMap.set(c.path, arr);
-  }
-
-  const walk = async (d: string) => {
-    for (const entry of fs.readdirSync(d, { withFileTypes: true })) {
-      if (SKIP_DIRS.has(entry.name)) continue;
-      const full = path.join(d, entry.name);
-      if (entry.isDirectory()) {
-        await walk(full);
-        continue;
-      }
-      if (!INDEXABLE_EXTS.has(path.extname(entry.name))) continue;
-      const mtime = fs.statSync(full).mtimeMs;
-      const existingChunks = chunkMap.get(full);
-      if (existingChunks && existingChunks[0] && existingChunks[0].mtime >= mtime) continue;
-      onFile?.(full);
-      const text = fs.readFileSync(full, "utf-8");
-      const chunks = chunkText(text);
-      const newChunks: RagChunk[] = [];
-      for (const chunk of chunks) {
-        const embedding = await embed(chunk, baseUrl);
-        if (embedding.length > 0) newChunks.push({ path: full, text: chunk, embedding, mtime });
-      }
-      if (newChunks.length > 0) chunkMap.set(full, newChunks);
-    }
-  };
-
-  await walk(dir);
-  saveIndex(indexPath, [...chunkMap.values()].flat());
-}
-
-export async function queryIndex(
-  userText: string,
-  baseUrl: string,
-  indexPath = RAG_INDEX_FILE,
-  topK = RAG_TOP_K,
-  threshold = RAG_THRESHOLD,
-): Promise<ScoredChunk[]> {
-  const chunks = loadIndex(indexPath);
-  if (chunks.length === 0) return [];
-  const queryEmb = await embed(userText.slice(0, 1500), baseUrl);
-  if (queryEmb.length === 0) return [];
-  return chunks
-    .map((c) => ({ path: c.path, text: c.text, score: cosineSimilarity(queryEmb, c.embedding) }))
-    .filter((c) => c.score >= threshold)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, topK);
-}
-
-export function buildContextBlock(chunks: ScoredChunk[]): string {
+export function buildContextBlock(chunks: CodeChunk[]): string {
   if (chunks.length === 0) return "";
-  const parts = ["## Relevant Code Context (RAG)"];
-  const seen = new Set<string>();
+  let block = "## Relevant Code Context (RAG)\n";
   for (const chunk of chunks) {
-    const key = `${chunk.path}:${chunk.text.slice(0, 50)}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const lang = path.extname(chunk.path).slice(1);
-    parts.push(`\n### ${chunk.path}\n\`\`\`${lang}\n${chunk.text}\n\`\`\``);
+    block += `\n### ${chunk.path} (relevance: ${(chunk.score * 100).toFixed(0)}%)\n`;
+    block += "```\n" + chunk.text + "\n```\n";
   }
-  return parts.join("\n");
+  return block;
+}
+
+export interface RAGIndex {
+  chunks: Array<{ path: string; text: string; embedding: number[] }>;
+}
+
+async function simpleEmbedding(text: string): Promise<number[]> {
+  const words = text.toLowerCase().split(/\s+/);
+  const vec: Record<string, number> = {};
+  for (const word of words) {
+    vec[word] = (vec[word] || 0) + 1;
+  }
+  return Object.values(vec).slice(0, 384);
+}
+
+export async function indexDirectory(rootDir: string, baseUrl?: string): Promise<void> {
+  const chunks: Array<{ path: string; text: string; embedding: number[] }> = [];
+  const tsFiles = findFiles(rootDir, ".ts");
+  for (const file of tsFiles) {
+    const text = fs.readFileSync(file, "utf-8");
+    const textChunks = chunkText(text, 500, 50);
+    for (const chunk of textChunks) {
+      const embedding = await simpleEmbedding(chunk);
+      chunks.push({ path: file, text: chunk, embedding });
+    }
+  }
+  const index: RAGIndex = { chunks };
+  fs.writeFileSync(RAG_INDEX_FILE, JSON.stringify(index, null, 2));
+}
+
+function findFiles(dir: string, ext: string): string[] {
+  const files: string[] = [];
+  if (!fs.existsSync(dir)) return files;
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (!entry.name.startsWith(".") && entry.name !== "node_modules") {
+        files.push(...findFiles(fullPath, ext));
+      }
+    } else if (entry.name.endsWith(ext)) {
+      files.push(fullPath);
+    }
+  }
+  return files;
+}
+
+export async function queryIndex(query: string, baseUrl?: string): Promise<CodeChunk[]> {
+  if (!fs.existsSync(RAG_INDEX_FILE)) return [];
+  const indexData = JSON.parse(fs.readFileSync(RAG_INDEX_FILE, "utf-8")) as RAGIndex;
+  const queryEmbedding = await simpleEmbedding(query);
+  const scored = indexData.chunks.map((chunk) => ({
+    path: chunk.path,
+    text: chunk.text,
+    score: cosineSimilarity(queryEmbedding, chunk.embedding),
+  }));
+  return scored.sort((a, b) => b.score - a.score).slice(0, 5);
 }
