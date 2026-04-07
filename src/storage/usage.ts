@@ -1,4 +1,3 @@
-import { getModelInfo } from "../grok/models";
 import type { UsageEvent, UsageSource } from "../types/index";
 import { getDatabase } from "./db";
 
@@ -91,8 +90,6 @@ export function listSessionUsage(sessionId: string): UsageEvent[] {
   }));
 }
 
-function estimateCostMicros(model: string, inputTokens: number, outputTokens: number): number {
-  const info = getModelInfo(model);
-  if (!info) return 0;
-  return Math.round(inputTokens * info.inputPrice + outputTokens * info.outputPrice);
+function estimateCostMicros(_model: string, _inputTokens: number, _outputTokens: number): number {
+  return 0; // Ollama is local — no per-token cost
 }

@@ -19,7 +19,7 @@ describe("forceCot", () => {
   it("does not add CoT if already present", () => {
     const already = msgs("fix this bug\n\nThink step-by-step before answering.");
     const result = forceCot(already);
-    const count = (result[0].content.match(/Think step-by-step/g) || []).length;
+    const count = ((result[0].content as string).match(/Think step-by-step/g) || []).length;
     expect(count).toBe(1);
   });
 });
@@ -39,7 +39,7 @@ describe("applyThinkingMode", () => {
     const already = msgs("/think\nimplement auth");
     const result = applyThinkingMode(already, "qwen3:14b");
     expect(result[0].content).toMatch(/^\/think\n/);
-    expect(result[0].content.split("/think").length - 1).toBe(1);
+    expect((result[0].content as string).split("/think").length - 1).toBe(1);
   });
 });
 

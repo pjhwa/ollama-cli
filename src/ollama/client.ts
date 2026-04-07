@@ -47,7 +47,8 @@ export async function generateTitle(
 ): Promise<GeneratedTitle> {
   try {
     const { text, usage } = await generateText({
-      model: provider(modelId),
+      // biome-ignore lint/suspicious/noExplicitAny: Ollama SDK returns LanguageModelV1, cast required
+      model: provider(modelId) as any,
       temperature: 0.5,
       maxOutputTokens: 60,
       system: [

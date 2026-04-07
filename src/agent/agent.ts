@@ -1,6 +1,5 @@
 import { APICallError } from "@ai-sdk/provider";
 import { type ModelMessage, stepCountIs, streamText, type ToolSet } from "ai";
-import { createTools } from "../grok/tools";
 import { executeEventHooks } from "../hooks/index";
 import type {
   NotificationHookInput,
@@ -33,6 +32,7 @@ import {
 } from "../storage/index";
 import { BashTool } from "../tools/bash";
 import { type ScheduleDaemonStatus, ScheduleManager, type StoredSchedule } from "../tools/schedule";
+import { createTools } from "../tools/tools";
 import type {
   AgentMode,
   ChatEntry,
@@ -498,7 +498,6 @@ export class Agent {
   private maxTokens: number;
   private planContext: string | null = null;
   private subagentStatusListeners = new Set<(status: SubagentStatus | null) => void>();
-  private sendTelegramFile: ((filePath: string) => Promise<ToolResult>) | null = null;
   private sessionStartHookFired = false;
 
   constructor(
@@ -580,10 +579,6 @@ export class Agent {
 
   setPlanContext(ctx: string | null): void {
     this.planContext = ctx;
-  }
-
-  setSendTelegramFile(fn: ((filePath: string) => Promise<ToolResult>) | null): void {
-    this.sendTelegramFile = fn;
   }
 
   hasApiKey(): boolean {
@@ -1255,7 +1250,6 @@ export class Agent {
             listDelegations: () => this.listDelegations(),
             scheduleManager: this.schedules,
             subagents,
-            sendTelegramFile: this.sendTelegramFile ?? undefined,
             sessionId: this.session?.id ?? undefined,
           });
           let tools: ToolSet = baseTools;

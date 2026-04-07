@@ -4,6 +4,7 @@ import * as path from "path";
 import type { HooksConfig } from "../hooks/types";
 import { listOllamaModels } from "../ollama/discovery";
 import { recommendModel } from "../ollama/models";
+import type { ReasoningEffort } from "../types/index";
 
 export type McpTransport = "http" | "sse" | "stdio";
 
@@ -38,6 +39,12 @@ export interface CustomSubagentConfig {
   instruction: string;
 }
 
+export interface TelegramSettings {
+  botToken?: string;
+  approvedUserIds?: number[];
+  sessionsByUserId?: Record<string, string>;
+}
+
 export interface UserSettings {
   defaultModel?: string;
   ollamaBaseUrl?: string;
@@ -45,15 +52,38 @@ export interface UserSettings {
   mcp?: McpSettings;
   subAgents?: CustomSubagentConfig[];
   hooks?: HooksConfig;
+  // Legacy compat fields — not used in ollama-cli
+  apiKey?: string;
+  reasoningEffortByModel?: Record<string, ReasoningEffort>;
+  telegram?: TelegramSettings;
+  sandbox?: SandboxSettings;
+  sandboxMode?: SandboxMode;
 }
 
 export interface ProjectSettings {
   model?: string;
+  sandboxMode?: SandboxMode;
+  sandbox?: SandboxSettings;
 }
 
-// Keep these for backward compat with agent.ts that may still reference them
-export type SandboxMode = "off";
-export type SandboxSettings = {};
+// Sandbox types retained for compatibility — sandbox is always "off" in ollama-cli
+export type SandboxMode = "off" | "shuru";
+export interface SandboxSettings {
+  allowNet?: boolean;
+  allowedHosts?: string[];
+  ports?: string[];
+  cpus?: number;
+  memory?: number;
+  diskSize?: number;
+  from?: string;
+  verifyBaseFrom?: string;
+  allowEphemeralInstall?: boolean;
+  guestWorkdir?: string;
+  syncHostWorkspace?: boolean;
+  shellInit?: string[];
+  hostBrowserCommandsOnHost?: boolean;
+  secrets?: Array<{ name: string; fromEnv: string; hosts: string[] }>;
+}
 
 const USER_DIR = path.join(os.homedir(), ".ollama-cli");
 const USER_SETTINGS_PATH = path.join(USER_DIR, "settings.json");
@@ -137,10 +167,28 @@ export function getCurrentSandboxSettings(): SandboxSettings {
   return {};
 }
 export function mergeSandboxSettings(
-  _base: SandboxSettings | undefined,
-  _override: SandboxSettings | undefined,
+  base: SandboxSettings | undefined,
+  override: SandboxSettings | undefined,
 ): SandboxSettings {
-  return {};
+  if (!base && !override) return {};
+  if (!base) return { ...override };
+  if (!override) return { ...base };
+  return {
+    allowNet: override.allowNet ?? base.allowNet,
+    allowedHosts: override.allowedHosts ?? base.allowedHosts,
+    ports: override.ports ?? base.ports,
+    cpus: override.cpus ?? base.cpus,
+    memory: override.memory ?? base.memory,
+    diskSize: override.diskSize ?? base.diskSize,
+    from: override.from ?? base.from,
+    verifyBaseFrom: override.verifyBaseFrom ?? base.verifyBaseFrom,
+    allowEphemeralInstall: override.allowEphemeralInstall ?? base.allowEphemeralInstall,
+    guestWorkdir: override.guestWorkdir ?? base.guestWorkdir,
+    syncHostWorkspace: override.syncHostWorkspace ?? base.syncHostWorkspace,
+    shellInit: override.shellInit ?? base.shellInit,
+    hostBrowserCommandsOnHost: override.hostBrowserCommandsOnHost ?? base.hostBrowserCommandsOnHost,
+    secrets: override.secrets ?? base.secrets,
+  };
 }
 export function getApiKey(): string | undefined {
   return undefined;
@@ -158,9 +206,53 @@ export function saveProjectSettings(_partial: Partial<ProjectSettings>): void {}
 export function isReservedSubagentName(_name: string): boolean {
   return false;
 }
-export function parseSubAgentsRawList(_raw: unknown): CustomSubagentConfig[] {
-  return [];
+export function parseSubAgentsRawList(raw: unknown): CustomSubagentConfig[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const agents: CustomSubagentConfig[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const entry = item as Record<string, unknown>;
+    const name = typeof entry.name === "string" ? entry.name.trim() : "";
+    const model = typeof entry.model === "string" ? entry.model.trim() : "";
+    const instruction = typeof entry.instruction === "string" ? entry.instruction : "";
+    if (!name || !model) continue;
+    const dedupeKey = name.toLowerCase();
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    agents.push({ name, model, instruction });
+  }
+  return agents;
 }
 export function getReasoningEffortForModel(_modelId: string): undefined {
   return undefined;
+}
+// Telegram stubs — kept for UI compatibility
+export type McpRemoteTransport = McpTransport;
+export function getTelegramBotToken(): string | undefined {
+  return undefined;
+}
+export function saveApprovedTelegramUserId(_userId: number): void {}
+export function normalizeSandboxSettings(raw: unknown): SandboxSettings {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const r = raw as Record<string, unknown>;
+  const result: SandboxSettings = {};
+  if (typeof r.allowNet === "boolean") result.allowNet = r.allowNet;
+  if (Array.isArray(r.allowedHosts))
+    result.allowedHosts = r.allowedHosts.filter((h): h is string => typeof h === "string");
+  if (Array.isArray(r.ports)) result.ports = r.ports.filter((p): p is string => typeof p === "string");
+  if (typeof r.cpus === "number") result.cpus = r.cpus;
+  if (typeof r.memory === "number") result.memory = r.memory;
+  if (typeof r.diskSize === "number") result.diskSize = r.diskSize;
+  if (typeof r.from === "string") result.from = r.from;
+  if (typeof r.verifyBaseFrom === "string") result.verifyBaseFrom = r.verifyBaseFrom;
+  if (typeof r.allowEphemeralInstall === "boolean") result.allowEphemeralInstall = r.allowEphemeralInstall;
+  if (typeof r.guestWorkdir === "string") result.guestWorkdir = r.guestWorkdir;
+  if (typeof r.syncHostWorkspace === "boolean") result.syncHostWorkspace = r.syncHostWorkspace;
+  if (Array.isArray(r.shellInit)) result.shellInit = r.shellInit.filter((s): s is string => typeof s === "string");
+  if (typeof r.hostBrowserCommandsOnHost === "boolean") result.hostBrowserCommandsOnHost = r.hostBrowserCommandsOnHost;
+  return result;
+}
+export function normalizeSandboxMode(_value: unknown): SandboxMode {
+  return "off";
 }

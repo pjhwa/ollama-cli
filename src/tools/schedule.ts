@@ -2,7 +2,7 @@ import { spawn } from "child_process";
 import { closeSync, promises as fs, openSync } from "fs";
 import os from "os";
 import path from "path";
-import { getCurrentModel } from "../utils/settings";
+import { getCurrentModelSync } from "../utils/settings";
 
 const SCHEDULES_DIR = path.join(os.homedir(), ".grok", "schedules");
 const SCHEDULE_DAEMON_PID_PATH = path.join(os.homedir(), ".grok", "daemon.pid");
@@ -79,7 +79,7 @@ interface ParsedCronPart {
 export class ScheduleManager {
   constructor(
     private readonly getCwd: () => string = () => process.cwd(),
-    private readonly getModel: () => string = () => getCurrentModel(),
+    private readonly getModel: () => string = () => getCurrentModelSync(),
   ) {}
 
   async create(options: ScheduleCreateOptions): Promise<ScheduleCreateResult> {

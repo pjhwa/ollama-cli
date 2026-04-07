@@ -1,6 +1,7 @@
-import { generateText, type ToolSet, tool } from "ai";
+import { type ToolSet, tool } from "ai";
 import { z } from "zod";
 import { executePostToolFailureHooks, executePostToolHooks, executePreToolHooks } from "../hooks/index";
+import type { OllamaProvider } from "../ollama/client";
 import type { BashTool } from "../tools/bash";
 import {
   computerClick,
@@ -20,19 +21,6 @@ import { editFile, readFile, writeFile } from "../tools/file";
 import type { ScheduleDaemonStatus, ScheduleManager, StoredSchedule } from "../tools/schedule";
 import type { AgentMode, TaskRequest, ToolResult } from "../types/index";
 import { type CustomSubagentConfig, loadValidSubAgents } from "../utils/settings";
-import type { XaiProvider } from "./client";
-import {
-  type GenerateImageToolInput,
-  type GenerateVideoToolInput,
-  generateImageTool,
-  generateVideoTool,
-  IMAGE_ASPECT_RATIOS,
-  IMAGE_RESOLUTIONS,
-  VIDEO_ASPECT_RATIOS,
-  VIDEO_RESOLUTIONS,
-} from "./media";
-
-const RESPONSES_SEARCH_MODEL = "grok-4-1-fast-non-reasoning";
 
 interface CreateToolsOptions {
   runTask?: (request: TaskRequest, abortSignal?: AbortSignal) => Promise<ToolResult>;
@@ -41,45 +29,16 @@ interface CreateToolsOptions {
   listDelegations?: () => Promise<ToolResult>;
   scheduleManager?: ScheduleManager;
   subagents?: CustomSubagentConfig[];
-  sendTelegramFile?: (filePath: string) => Promise<ToolResult>;
   sessionId?: string;
 }
 
 export function createTools(
   bash: BashTool,
-  provider: XaiProvider,
+  _provider: OllamaProvider,
   mode: AgentMode = "agent",
   options: CreateToolsOptions = {},
 ) {
   const cwd = () => bash.getCwd();
-
-  const runResponsesSearch = async (
-    query: string,
-    toolName: "web_search" | "x_search",
-    abortSignal?: AbortSignal,
-  ): Promise<{ success: boolean; output: string }> => {
-    try {
-      const { text } = await generateText({
-        model: provider.responses(RESPONSES_SEARCH_MODEL),
-        maxOutputTokens: 4096,
-        prompt: query,
-        abortSignal,
-        tools: {
-          ...(toolName === "web_search" ? { web_search: provider.tools.webSearch() } : {}),
-          ...(toolName === "x_search" ? { x_search: provider.tools.xSearch() } : {}),
-        },
-      });
-
-      return {
-        success: true,
-        output: text || "No search results found.",
-      };
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      const label = toolName === "web_search" ? "Web search" : "X search";
-      return { success: false, output: `${label} failed: ${msg}` };
-    }
-  };
 
   const base = {
     bash: tool({
@@ -179,108 +138,9 @@ export function createTools(
         return readFile(path, cwd(), start_line, end_line);
       },
     }),
-
-    search_web: tool({
-      description:
-        "Search the web for current information, documentation, APIs, tutorials, news, or any real-time data. Returns summarized results with sources.",
-      inputSchema: z.object({
-        query: z.string().describe("The search query"),
-      }),
-      execute: async ({ query }, { abortSignal }) => {
-        return runResponsesSearch(query, "web_search", abortSignal);
-      },
-    }),
-
-    search_x: tool({
-      description:
-        "Search X (Twitter) for real-time posts, discussions, opinions, and trends. Returns relevant posts with authors and engagement data.",
-      inputSchema: z.object({
-        query: z.string().describe("The search query"),
-      }),
-      execute: async ({ query }, { abortSignal }) => {
-        return runResponsesSearch(query, "x_search", abortSignal);
-      },
-    }),
-
-    generate_image: tool({
-      description:
-        "Generate a new image or edit an existing image using Grok Imagine. Use when the user asks to create, redesign, restyle, or modify an image. Optionally pass a local file path or public URL in source to edit an existing image. Saves the generated image files locally and returns their paths.",
-      inputSchema: z.object({
-        prompt: z.string().describe("Prompt describing the image to generate or the edit to apply"),
-        source: z
-          .string()
-          .optional()
-          .describe("Optional local image path or public image URL to use as the source for editing"),
-        aspect_ratio: z
-          .enum(IMAGE_ASPECT_RATIOS)
-          .optional()
-          .describe("Optional output aspect ratio. Use when the user requests a specific format."),
-        resolution: z.enum(IMAGE_RESOLUTIONS).optional().describe("Optional output resolution: 1k or 2k"),
-        n: z.number().int().min(1).max(10).optional().describe("Number of images to generate (default: 1)"),
-        output_path: z
-          .string()
-          .optional()
-          .describe("Optional file path for the generated image. For multiple images, numbered suffixes are added."),
-      }),
-      execute: async (input: GenerateImageToolInput, { abortSignal }) => {
-        return generateImageTool(provider, input, cwd(), abortSignal);
-      },
-    }),
-
-    generate_video: tool({
-      description:
-        "Generate a new short video or animate an existing image using Grok Imagine Video. Use when the user asks for a clip, animation, cinematic shot, or motion from a still image. Optionally pass a local image path or public image URL in source for image-to-video generation. Saves the generated video files locally and returns their paths.",
-      inputSchema: z.object({
-        prompt: z.string().describe("Prompt describing the video or motion to generate"),
-        source: z
-          .string()
-          .optional()
-          .describe("Optional local image path or public image URL to use as the starting frame"),
-        duration: z.number().int().min(1).max(15).optional().describe("Video duration in seconds (1-15)"),
-        aspect_ratio: z
-          .enum(VIDEO_ASPECT_RATIOS)
-          .optional()
-          .describe("Optional output aspect ratio for text-to-video or to override image-to-video framing"),
-        resolution: z.enum(VIDEO_RESOLUTIONS).optional().describe("Optional output resolution: 480p or 720p"),
-        output_path: z
-          .string()
-          .optional()
-          .describe("Optional file path for the generated video. For multiple videos, numbered suffixes are added."),
-        poll_interval_ms: z
-          .number()
-          .int()
-          .min(100)
-          .optional()
-          .describe("Optional polling interval in milliseconds while waiting for video generation"),
-        poll_timeout_ms: z
-          .number()
-          .int()
-          .min(1000)
-          .optional()
-          .describe("Optional timeout in milliseconds while waiting for video generation"),
-      }),
-      execute: async (input: GenerateVideoToolInput, { abortSignal }) => {
-        return generateVideoTool(provider, input, cwd(), abortSignal);
-      },
-    }),
   };
 
   const tools: ToolSet = { ...base };
-
-  if (options.sendTelegramFile) {
-    const sendFile = options.sendTelegramFile;
-    tools.telegram_send_file = tool({
-      description:
-        "Send a local file to the current Telegram chat as an attachment. Use this to deliver generated images, videos, documents, or any other file to the user in Telegram. The file is uploaded directly — the user receives it as a Telegram media message or document.",
-      inputSchema: z.object({
-        path: z.string().describe("Absolute or cwd-relative path to the local file to send"),
-      }),
-      execute: async ({ path: filePath }) => {
-        const resolved = filePath.startsWith("/") ? filePath : `${cwd()}/${filePath}`;
-        return sendFile(resolved);
-      },
-    });
-  }
 
   if (options.runTask) {
     const customNames = (options.subagents ?? loadValidSubAgents()).map((agent) => agent.name);
