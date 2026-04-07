@@ -1,4 +1,4 @@
-import { DatabaseSync, type StatementSync } from "node:sqlite";
+import { Database } from "bun:sqlite";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -50,10 +50,10 @@ export function closeDatabase(): void {
 }
 
 class NodeSqliteDatabase implements SQLiteDatabase {
-  private readonly db: DatabaseSync;
+  private readonly db: Database;
 
   constructor(filename: string) {
-    this.db = new DatabaseSync(filename);
+    this.db = new Database(filename);
   }
 
   exec(sql: string): void {
@@ -61,21 +61,21 @@ class NodeSqliteDatabase implements SQLiteDatabase {
   }
 
   prepare(sql: string): SQLiteStatement {
-    const stmt: StatementSync = this.db.prepare(sql);
+    const stmt = this.db.prepare(sql);
     return {
       run: (...params: unknown[]) => {
         const p = flattenParams(params);
-        // biome-ignore lint/suspicious/noExplicitAny: node:sqlite StatementSync uses SQLInputValue, cast required
+        // biome-ignore lint/suspicious/noExplicitAny: bun:sqlite Statement uses unknown param types
         return p !== undefined ? stmt.run(...(p as any[])) : stmt.run();
       },
       get: (...params: unknown[]) => {
         const p = flattenParams(params);
-        // biome-ignore lint/suspicious/noExplicitAny: node:sqlite StatementSync uses SQLInputValue, cast required
+        // biome-ignore lint/suspicious/noExplicitAny: bun:sqlite Statement uses unknown param types
         return p !== undefined ? stmt.get(...(p as any[])) : stmt.get();
       },
       all: (...params: unknown[]) => {
         const p = flattenParams(params);
-        // biome-ignore lint/suspicious/noExplicitAny: node:sqlite StatementSync uses SQLInputValue, cast required
+        // biome-ignore lint/suspicious/noExplicitAny: bun:sqlite Statement uses unknown param types
         return p !== undefined ? (stmt.all(...(p as any[])) as unknown[]) : (stmt.all() as unknown[]);
       },
     };
