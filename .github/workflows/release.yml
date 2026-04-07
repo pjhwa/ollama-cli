@@ -22,16 +22,9 @@ jobs:
           - runner: ubuntu-latest
             build_output: ollama-cli
             asset_name: ollama-cli-linux-x64
-          - runner: ubuntu-latest
-            build_output: ollama-cli
-            asset_name: ollama-cli-linux-arm64
-            bun_arch: aarch64-linux
           - runner: macos-latest
             build_output: ollama-cli
             asset_name: ollama-cli-darwin-arm64
-          - runner: macos-13
-            build_output: ollama-cli
-            asset_name: ollama-cli-darwin-x64
           - runner: windows-latest
             build_output: ollama-cli.exe
             asset_name: ollama-cli-windows-x64.exe
@@ -49,12 +42,7 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Compile standalone binary (cross)
-        if: matrix.bun_arch != ''
-        run: bun build --compile --target=bun-${{ matrix.bun_arch }} --outfile "release/${{ matrix.build_output }}" ./src/index.ts
-
-      - name: Compile standalone binary (native)
-        if: matrix.bun_arch == ''
+      - name: Compile standalone binary
         run: bun build --compile --outfile "release/${{ matrix.build_output }}" ./src/index.ts
 
       - name: Compute checksum (unix)
@@ -116,8 +104,6 @@ jobs:
           generate_release_notes: true
           files: |
             release-assets/**/ollama-cli-linux-x64
-            release-assets/**/ollama-cli-linux-arm64
             release-assets/**/ollama-cli-darwin-arm64
-            release-assets/**/ollama-cli-darwin-x64
             release-assets/**/ollama-cli-windows-x64.exe
             release-assets/checksums.txt
