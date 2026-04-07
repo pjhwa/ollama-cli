@@ -1,30 +1,48 @@
 # AGENTS.md
 
-## Cursor Cloud specific instructions
+## ollama-cli — agent/AI coding assistant instructions
 
 ### Overview
 
-Grok CLI (`@vibe-kit/grok-cli`) is a single-package TypeScript CLI tool — no databases, Docker, or background services. See `README.md` for full documentation and usage.
+`ollama-cli` is a single-package TypeScript CLI tool — no databases, Docker, or background services required beyond a running Ollama instance. See `README.md` for full documentation and usage.
 
 ### Quick reference
 
+| Action        | Command                                                                   |
+| ------------- | ------------------------------------------------------------------------- |
+| Install deps  | `npm install` (installs Husky; pre-commit runs Biome on staged files)     |
+| Typecheck     | `npm run typecheck`                                                       |
+| Lint          | `npm run lint`                                                            |
+| Test          | `npm test` (vitest)                                                       |
+| Build         | `npm run build`                                                           |
+| Run built CLI | `node dist/index.js`                                                      |
+| Headless mode | `node dist/index.js --prompt "..." --max-tool-rounds N`                   |
+| CLI help      | `node dist/index.js --help`                                               |
 
-| Action        | Command                                                               |
-| ------------- | --------------------------------------------------------------------- |
-| Install deps  | `bun install` (installs Husky; pre-commit runs Biome on staged files) |
-| Typecheck     | `bun run typecheck`                                                   |
-| Build         | `bun run build`                                                       |
-| Run built CLI | `node dist/index.js`                                                  |
-| Headless mode | `node dist/index.js --prompt "..." --max-tool-rounds N`               |
-| CLI help      | `node dist/index.js --help`                                           |
+### Architecture
 
-
-### Known issues
-
-- **ESLint config is broken**: The repo has `.eslintrc.js` (legacy format) but uses ESLint 9 (`^9.31.0`) + `@typescript-eslint` v8, which require flat config (`eslint.config.js`). Additionally, `.eslintrc.js` uses `module.exports` (CJS) but `package.json` has `"type": "module"` (ESM). Running `bun run lint` will fail. Use `bun run typecheck` as the primary code quality check (this is also what CI enforces).
-- **Dev mode (`bun run dev` / `bun run dev:node`) fails at runtime**: `src/utils/model-config.ts` imports TypeScript interfaces (`UserSettings`, `ProjectSettings`) as value imports from `settings-manager.ts`. These type-only exports are erased at runtime by Bun and tsx, causing `SyntaxError: export '...' not found`. The fix is to use `import type` syntax, but this is a pre-existing repo issue. **Workaround**: build first (`bun run build`), then run the compiled version (`node dist/index.js`).
+- **`src/ollama/`** — Ollama backend: discovery, client, model management, pull, optimizer pipeline
+  - `discovery.ts` — listOllamaModels, checkOllamaRunning, hasLocalOllama
+  - `client.ts` — createProvider (wraps @ai-sdk/openai pointed at localhost:11434), resolveModelRuntime, generateTitle
+  - `models.ts` — recommendModel with latency/balanced/coding strategies
+  - `pull.ts` — pullModel with streaming progress
+  - `optimizer/` — CoT, UltraPlan, RAG pipeline (`index.ts` orchestrates all three)
+- **`src/agent/`** — core agent loop (`agent.ts`), compaction (`compaction.ts`)
+- **`src/tools/`** — tool definitions (`tools.ts`), bash, computer, schedule, etc.
+- **`src/ui/`** — OpenTUI React terminal UI (`app.tsx`)
+- **`src/utils/settings.ts`** — user/project settings, optimizer settings, MCP servers
+- **`src/index.ts`** — CLI entrypoint (Commander.js): interactive, headless, models, rag subcommands
 
 ### Environment
 
-- **Bun** must be installed (not pre-installed on Cloud VMs). The update script handles this.
-- `GROK_API_KEY` environment variable is required for API calls. Set it as a secret.
+- **Node.js 18+** required (not Bun — Bun is not installed in this project's runtime)
+- **Ollama** must be running locally: `ollama serve`
+- No API key required — ollama-cli connects to `http://localhost:11434` by default
+- Override with `OLLAMA_BASE_URL`, `OLLAMA_MODEL` environment variables
+
+### Known issues / notes
+
+- The `src/grok/` directory contains minimal stubs retained for type compatibility with the UI layer. Do not add new code there.
+- `src/telegram/bridge.ts` and `src/telegram/pairing.ts` are no-op stubs — Telegram support has been removed.
+- Sandbox mode is always `"off"` — sandbox infrastructure is stubbed out.
+- `dev` mode runs from source via `tsx`; prefer `npm run build && node dist/index.js` for testing CLI behavior.
