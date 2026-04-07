@@ -47,7 +47,7 @@ jobs:
           bun-version: latest
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: bun install
 
       - name: Compile standalone binary (cross)
         if: matrix.bun_arch != ''
