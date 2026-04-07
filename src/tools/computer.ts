@@ -1,7 +1,6 @@
 import { execFile } from "child_process";
 import { randomUUID } from "crypto";
-import { existsSync, mkdirSync } from "fs";
-import { createRequire } from "module";
+import { mkdirSync } from "fs";
 import { dirname, isAbsolute, join, resolve } from "path";
 import type { ComputerToolMetadata, ToolResult } from "../types/index";
 
@@ -614,8 +613,8 @@ function resolveAgentDesktopInvoker(): AgentDesktopInvoker {
   }
 
   try {
-    const require = createRequire(import.meta.url);
-    const packagePath = require.resolve("agent-desktop/package.json");
+    // biome-ignore lint/suspicious/noExplicitAny: require is available in CommonJS
+    const packagePath = (require as any).resolve("agent-desktop/package.json");
     const packageDir = dirname(packagePath);
     cachedInvoker = {
       command: process.execPath,

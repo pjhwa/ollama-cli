@@ -2,11 +2,10 @@
   "name": "ollama-cli",
   "version": "1.0.0",
   "description": "Local AI coding agent powered by Ollama — built with Bun and OpenTUI.",
-  "type": "module",
   "main": "dist/index.js",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
+      "require": "./dist/index.js",
       "types": "./dist/index.d.ts"
     }
   },
@@ -43,13 +42,13 @@
   "license": "MIT",
   "dependencies": {
     "@ai-sdk/mcp": "^1.0.25",
-    "@ai-sdk/openai": "^1.0.0",
-    "@ai-sdk/provider-utils": "^4.0.21",
+    "@ai-sdk/openai": "^3.0.51",
+    "@ai-sdk/provider-utils": "^4.0.23",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@opentui/core": "^0.1.88",
     "@opentui/react": "^0.1.88",
     "agent-desktop": "^0.1.11",
-    "ai": "^6.0.116",
+    "ai": "^6.0.146",
     "commander": "^12.1.0",
     "diff": "^8.0.3",
     "dotenv": "^16.6.1",

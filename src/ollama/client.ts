@@ -28,7 +28,6 @@ export function createProvider(baseUrl?: string): OllamaProvider {
   return createOpenAI({
     baseURL: getOllamaChatBaseUrl(baseUrl),
     apiKey: "ollama",
-    compatibility: "compatible",
   });
 }
 

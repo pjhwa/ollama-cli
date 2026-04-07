@@ -1,4 +1,4 @@
-import { Database } from "bun:sqlite";
+import { DatabaseSync, type StatementSync } from "node:sqlite";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -21,15 +21,15 @@ export interface SQLiteDatabase {
 let db: SQLiteDatabase | null = null;
 
 export function getDatabasePath(): string {
-  const dir = path.join(os.homedir(), ".grok");
+  const dir = path.join(os.homedir(), ".ollama-cli");
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  return path.join(dir, "grok.db");
+  return path.join(dir, "ollama-cli.db");
 }
 
 export function getDatabase(): SQLiteDatabase {
   if (db) return db;
 
-  const database = new BunSqliteDatabase(getDatabasePath());
+  const database = new NodeSqliteDatabase(getDatabasePath());
   database.pragma("journal_mode = WAL");
   database.pragma("foreign_keys = ON");
   database.pragma("busy_timeout = 5000");
@@ -49,11 +49,11 @@ export function closeDatabase(): void {
   db = null;
 }
 
-class BunSqliteDatabase implements SQLiteDatabase {
-  private readonly db: Database;
+class NodeSqliteDatabase implements SQLiteDatabase {
+  private readonly db: DatabaseSync;
 
   constructor(filename: string) {
-    this.db = new Database(filename, { create: true, strict: true });
+    this.db = new DatabaseSync(filename);
   }
 
   exec(sql: string): void {
@@ -61,10 +61,23 @@ class BunSqliteDatabase implements SQLiteDatabase {
   }
 
   prepare(sql: string): SQLiteStatement {
+    const stmt: StatementSync = this.db.prepare(sql);
     return {
-      run: (...params: unknown[]) => this.db.run(sql, normalizeBinding(params)),
-      get: (...params: unknown[]) => this.db.query(sql).get(normalizeBinding(params)),
-      all: (...params: unknown[]) => this.db.query(sql).all(normalizeBinding(params)),
+      run: (...params: unknown[]) => {
+        const p = flattenParams(params);
+        // biome-ignore lint/suspicious/noExplicitAny: node:sqlite StatementSync uses SQLInputValue, cast required
+        return p !== undefined ? stmt.run(...(p as any[])) : stmt.run();
+      },
+      get: (...params: unknown[]) => {
+        const p = flattenParams(params);
+        // biome-ignore lint/suspicious/noExplicitAny: node:sqlite StatementSync uses SQLInputValue, cast required
+        return p !== undefined ? stmt.get(...(p as any[])) : stmt.get();
+      },
+      all: (...params: unknown[]) => {
+        const p = flattenParams(params);
+        // biome-ignore lint/suspicious/noExplicitAny: node:sqlite StatementSync uses SQLInputValue, cast required
+        return p !== undefined ? (stmt.all(...(p as any[])) as unknown[]) : (stmt.all() as unknown[]);
+      },
     };
   }
 
@@ -73,15 +86,24 @@ class BunSqliteDatabase implements SQLiteDatabase {
       this.db.exec(`PRAGMA ${query}`);
       return undefined;
     }
-
-    const row = this.db.query(`PRAGMA ${query}`).get() as Record<string, unknown> | undefined;
+    const row = this.db.prepare(`PRAGMA ${query}`).get() as Record<string, unknown> | undefined;
     if (!options?.simple) return row;
     if (!row) return undefined;
     return Object.values(row)[0];
   }
 
   transaction<T>(fn: () => T): () => T {
-    return this.db.transaction(fn);
+    return () => {
+      this.db.exec("BEGIN");
+      try {
+        const result = fn();
+        this.db.exec("COMMIT");
+        return result;
+      } catch (err) {
+        this.db.exec("ROLLBACK");
+        throw err;
+      }
+    };
   }
 
   close(): void {
@@ -89,7 +111,15 @@ class BunSqliteDatabase implements SQLiteDatabase {
   }
 }
 
-function normalizeBinding(params: unknown[]): unknown {
+function flattenParams(params: unknown[]): unknown[] | undefined {
   if (params.length === 0) return undefined;
-  return params.length === 1 ? params[0] : params;
+  if (params.length === 1) {
+    // If it's an object (named params) or primitive, pass directly
+    const first = params[0];
+    if (first === null || first === undefined) return undefined;
+    if (Array.isArray(first)) return first;
+    if (typeof first === "object") return [first];
+    return [first];
+  }
+  return params;
 }

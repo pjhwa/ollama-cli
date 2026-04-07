@@ -114,3 +114,4 @@ skills-lock.json
 
 # Secrets / credentials
 telegram-pair-code.txt
+.rag-index.json
