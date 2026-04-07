@@ -36,12 +36,12 @@ export function ensureWorkspace(cwd: string): WorkspaceInfo {
       display_name = excluded.display_name,
       last_seen_at = excluded.last_seen_at
   `).run({
-    id,
-    scope_key: resolved.scopeKey,
-    canonical_path: resolved.canonicalPath,
-    git_root: resolved.gitRoot,
-    display_name: resolved.displayName,
-    last_seen_at: now,
+    "@id": id,
+    "@scope_key": resolved.scopeKey,
+    "@canonical_path": resolved.canonicalPath,
+    "@git_root": resolved.gitRoot,
+    "@display_name": resolved.displayName,
+    "@last_seen_at": now,
   });
 
   const row = db

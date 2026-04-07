@@ -58,14 +58,14 @@ export class SessionStore {
         @id, @workspace_id, NULL, @model, @mode, @cwd_at_start, @cwd_last, 'active', @created_at, @updated_at
       )
     `).run({
-      id,
-      workspace_id: this.workspace.id,
-      model,
-      mode,
-      cwd_at_start: cwd,
-      cwd_last: cwd,
-      created_at: now,
-      updated_at: now,
+      "@id": id,
+      "@workspace_id": this.workspace.id,
+      "@model": model,
+      "@mode": mode,
+      "@cwd_at_start": cwd,
+      "@cwd_last": cwd,
+      "@created_at": now,
+      "@updated_at": now,
     });
 
     return this.getRequiredSession(id);
