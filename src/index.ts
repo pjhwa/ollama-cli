@@ -19,7 +19,7 @@ import { pullModel } from "./ollama/pull";
 import { startScheduleDaemon } from "./tools/schedule";
 import { processAtMentions } from "./utils/at-mentions.js";
 import { runScriptManagedUninstall } from "./utils/install-manager";
-import { getCurrentModel, getOllamaBaseUrl, saveUserSettings } from "./utils/settings";
+import { getCurrentModel, getOllamaBaseUrl, loadUserSettings, saveUserSettings } from "./utils/settings";
 import { runUpdate } from "./utils/update-checker";
 
 dotenv.config();
@@ -164,6 +164,19 @@ program
 
     if (typeof options.model === "string") saveUserSettings({ defaultModel: options.model });
 
+    // Wire --no-cot / --no-ultraplan / --no-rag flags into optimizer settings for this session
+    if (options.cot === false || options.ultraplan === false || options.rag === false) {
+      const existing = loadUserSettings().optimizer ?? {};
+      saveUserSettings({
+        optimizer: {
+          ...existing,
+          ...(options.cot === false && { enableCoT: false }),
+          ...(options.ultraplan === false && { enableUltraPlan: false }),
+          ...(options.rag === false && { enableRag: false }),
+        },
+      });
+    }
+
     if (options.prompt) {
       await runHeadless(
         options.prompt as string,
@@ -265,7 +278,8 @@ ragCmd
       console.log("  Done");
     }
     console.log("RAG index updated. Re-run after code changes to refresh.");
-    saveUserSettings({ optimizer: { enableRag: true } });
+    const existingOptimizer = loadUserSettings().optimizer ?? {};
+    saveUserSettings({ optimizer: { ...existingOptimizer, enableRag: true } });
   });
 
 ragCmd

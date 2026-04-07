@@ -1,4 +1,4 @@
-const THINKING_MODEL_HINTS = ["qwen3", "deepseek-r1", "qwq", "marco-o1"] as const;
+import { isThinkingModel } from "../client";
 
 const COT_SUFFIX = "\n\nThink step-by-step before answering. Show your reasoning, then provide the final answer.";
 
@@ -8,8 +8,7 @@ export interface CoreMessage {
 }
 
 export function isThinkingModelName(modelId: string): boolean {
-  const lower = modelId.toLowerCase();
-  return THINKING_MODEL_HINTS.some((hint) => lower.includes(hint));
+  return isThinkingModel(modelId);
 }
 
 export function forceCot(messages: CoreMessage[]): CoreMessage[] {
