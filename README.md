@@ -381,6 +381,18 @@ consuming the entire context window of a local model.
 
 ---
 
+### Design inspiration
+
+The optimizer pipeline design — context compaction with structured checkpoint summaries,
+tool-result truncation, reasoning sanitization, and the overall "pre-process before LLM call"
+pattern — was conceptually inspired by studying the
+[claude-code source snapshot](https://github.com/jarmuine/claude-code).
+
+No code was copied directly. Every function in `src/ollama/optimizer/` and `src/agent/compaction.ts`
+was written from scratch for the Ollama/TypeScript stack. The value taken from claude-code was
+architectural: understanding *which problems matter* (context overflow, verbose tool output,
+multi-turn coherence) and *how production agents approach them*.
+
 ### Pipeline summary
 
 ```
@@ -425,6 +437,13 @@ that parses code with Tree-sitter, applies Leiden clustering to detect architect
 relationships with LLM vision. graphify's approach to reducing RAG token consumption (up to 71.5× compared to
 raw file queries) and its transparency model (`EXTRACTED` / `INFERRED` / `AMBIGUOUS` tagging) directly
 influenced the design philosophy behind the ollama-cli RAG indexer and optimizer pipeline.
+
+**[claude-code source snapshot](https://github.com/jarmuine/claude-code)** — a preserved snapshot of
+Anthropic's Claude Code internals. No code was copied, but studying this codebase shaped the
+design of the optimizer pipeline and context management layer. Key patterns absorbed:
+context compaction with structured checkpoint summaries, tool-result truncation to prevent context
+overflow, reasoning-block sanitization, and the principle of separating planning from execution
+before each LLM call.
 
 ### Key libraries & frameworks
 
