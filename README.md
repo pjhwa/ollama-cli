@@ -287,6 +287,38 @@ npm test          # vitest
 
 ---
 
+## Acknowledgements
+
+ollama-cli builds on the shoulders of several open-source projects and ideas.
+
+### Direct fork
+
+**[grok-cli](https://github.com/superagent-ai/grok-cli)** by superagent-ai — the upstream project this was forked from.
+ollama-cli started as grok-cli with the xAI/Grok backend replaced by a local Ollama backend.
+The agent loop, sub-agent system, tool set, OpenTUI terminal UI, MCP integration, skills system,
+session/transcript storage, hooks, scheduling daemon, and install/update infrastructure all originate from grok-cli.
+
+### Inspiration
+
+**[graphify](https://github.com/safishamsi/graphify)** by safishamsi — a repository-to-knowledge-graph converter
+that parses code with Tree-sitter, applies Leiden clustering to detect architectural patterns, and enriches
+relationships with LLM vision. graphify's approach to reducing RAG token consumption (up to 71.5× compared to
+raw file queries) and its transparency model (`EXTRACTED` / `INFERRED` / `AMBIGUOUS` tagging) directly
+influenced the design philosophy behind the ollama-cli RAG indexer and optimizer pipeline.
+
+### Key libraries & frameworks
+
+| Library | Role |
+|---------|------|
+| [Vercel AI SDK](https://sdk.vercel.ai) (`ai`, `@ai-sdk/openai`) | LLM streaming, tool-calling, multi-step agent loop |
+| [OpenTUI](https://github.com/felixrieseberg/opentui) (`@opentui/core`, `@opentui/react`) | React-based terminal UI renderer |
+| [Model Context Protocol](https://modelcontextprotocol.io) (`@modelcontextprotocol/sdk`) | MCP server integration |
+| [agent-desktop](https://github.com/superagent-ai/agent-desktop) | Host desktop automation for computer-use sub-agent |
+| [Ollama](https://ollama.com) | Local LLM runtime — model serving, embedding, pull |
+| [Bun](https://bun.sh) | JavaScript runtime used for standalone binary compilation |
+
+---
+
 ## License
 
 MIT
