@@ -211,10 +211,10 @@ function HeroLogo({ t }: { t: Theme }) {
             els.push(" ".repeat(row.grok - cursor));
             els.push(
               <span key="grok" style={{ fg: t.primary }}>
-                {"Grok"}
+                {"ollama-cli"}
               </span>,
             );
-            cursor = row.grok + 4;
+            cursor = row.grok + 10;
           }
           const gap = star.col - cursor;
           if (gap > 0) els.push(" ".repeat(gap));
@@ -230,10 +230,10 @@ function HeroLogo({ t }: { t: Theme }) {
           els.push(" ".repeat(row.grok - cursor));
           els.push(
             <span key="grok" style={{ fg: t.primary }}>
-              {"Grok"}
+              {"ollama-cli"}
             </span>,
           );
-          cursor = row.grok + 4;
+          cursor = row.grok + 10;
         }
 
         els.push(" ".repeat(Math.max(0, 35 - cursor)));
@@ -306,7 +306,7 @@ const SLASH_MENU_ITEMS: SlashMenuItem[] = [
   { id: "review", label: "review", description: "Review recent changes" },
   { id: "verify", label: "verify", description: "Run local verification" },
   { id: "skills", label: "skills", description: "Manage skills" },
-  { id: "update", label: "update", description: "Update grok to the latest version" },
+  { id: "update", label: "update", description: "Update ollama-cli to the latest version" },
 ];
 
 const REVIEW_PROMPT = `Review all current changes in this repository. Follow these steps:
@@ -4508,7 +4508,7 @@ function UpdateModal({
         </box>
         <box flexShrink={0} paddingLeft={2} paddingRight={2} paddingTop={1}>
           <text fg={t.text}>
-            {"A new version of grok is available: "}
+            {"A new version of ollama-cli is available: "}
             <span style={{ fg: t.textMuted }}>
               {"v"}
               {currentVersion}

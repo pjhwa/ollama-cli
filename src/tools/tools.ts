@@ -671,7 +671,7 @@ function formatScheduleList(schedules: StoredSchedule[], daemonStatus: ScheduleD
 
   if (!daemonStatus.running) {
     lines.push("");
-    lines.push("Start `grok daemon` to run recurring schedules.");
+    lines.push("Start `ollama-cli daemon` to run recurring schedules.");
   }
 
   return lines.join("\n");
@@ -681,5 +681,5 @@ function formatDaemonReminder(status: ScheduleDaemonStatus): string {
   if (status.running) {
     return `Daemon status: running${status.pid ? ` (pid ${status.pid})` : ""}.`;
   }
-  return "Daemon status: not running. Use `schedule_daemon_start` (or `grok daemon`) to run recurring schedules.";
+  return "Daemon status: not running. Use `schedule_daemon_start` (or `ollama-cli daemon`) to run recurring schedules.";
 }

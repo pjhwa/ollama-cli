@@ -7,15 +7,15 @@ import readline from "readline";
 import semverGt from "semver/functions/gt.js";
 import semverValid from "semver/functions/valid.js";
 
-export const GROK_GITHUB_REPO = "superagent-ai/grok-cli";
+export const GROK_GITHUB_REPO = "pjhwa/ollama-cli";
 export const GROK_RELEASES_API = `https://api.github.com/repos/${GROK_GITHUB_REPO}/releases`;
 export const SCRIPT_INSTALL_METHOD = "script";
 
 const FETCH_TIMEOUT_MS = 5_000;
 const INSTALL_SCHEMA_VERSION = 1;
-const PATH_MARKER = "# grok";
+const PATH_MARKER = "# ollama-cli";
 const CONFIG_FILENAMES = ["user-settings.json", "AGENTS.md"];
-const DATA_ENTRIES = ["daemon.pid", "delegations", "grok.db", "models", "schedules"];
+const DATA_ENTRIES = ["daemon.pid", "delegations", "ollama-cli.db", "models", "schedules"];
 
 export interface ReleaseTarget {
   key: "darwin-arm64" | "linux-x64" | "windows-x64";
@@ -91,11 +91,11 @@ export function getInstallMetadataPath(homeDir = os.homedir()): string {
 
 export function getReleaseTargetForPlatform(platform = process.platform, arch = process.arch): ReleaseTarget | null {
   if (platform === "darwin" && (arch === "arm64" || arch === "x64"))
-    return { key: "darwin-arm64", assetName: "grok-darwin-arm64", binaryName: "grok" };
+    return { key: "darwin-arm64", assetName: "ollama-cli-darwin-arm64", binaryName: "ollama-cli" };
   if (platform === "linux" && arch === "x64")
-    return { key: "linux-x64", assetName: "grok-linux-x64", binaryName: "grok" };
+    return { key: "linux-x64", assetName: "ollama-cli-linux-x64", binaryName: "ollama-cli" };
   if (platform === "win32" && arch === "x64")
-    return { key: "windows-x64", assetName: "grok-windows-x64.exe", binaryName: "grok.exe" };
+    return { key: "windows-x64", assetName: "ollama-cli-windows-x64.exe", binaryName: "ollama-cli.exe" };
   return null;
 }
 

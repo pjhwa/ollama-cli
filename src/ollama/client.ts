@@ -3,7 +3,7 @@ import { generateText } from "ai";
 import { getOllamaChatBaseUrl } from "./discovery";
 
 export type OllamaProvider = ReturnType<typeof createOpenAI>;
-export type OllamaModel = ReturnType<OllamaProvider>;
+export type OllamaModel = ReturnType<OllamaProvider["chat"]>;
 
 export const THINKING_MODELS = ["qwen3", "deepseek-r1", "qwq", "marco-o1"] as const;
 
@@ -33,7 +33,7 @@ export function createProvider(baseUrl?: string): OllamaProvider {
 
 export function resolveModelRuntime(provider: OllamaProvider, modelId: string): OllamaModelRuntime {
   return {
-    model: provider(modelId),
+    model: provider.chat(modelId),
     modelId,
     isThinkingModel: isThinkingModel(modelId),
   };
@@ -47,7 +47,7 @@ export async function generateTitle(
   try {
     const { text, usage } = await generateText({
       // biome-ignore lint/suspicious/noExplicitAny: Ollama SDK returns LanguageModelV1, cast required
-      model: provider(modelId) as any,
+      model: provider.chat(modelId) as any,
       temperature: 0.5,
       maxOutputTokens: 60,
       system: [
