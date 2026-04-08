@@ -78,7 +78,7 @@ interface ReleaseDownload {
 }
 
 export function getGrokUserDir(homeDir = os.homedir()): string {
-  return path.join(homeDir, ".grok");
+  return path.join(homeDir, ".ollama-cli");
 }
 
 export function getScriptInstallDir(homeDir = os.homedir()): string {
@@ -285,20 +285,20 @@ export async function runScriptManagedUninstall(options: ScriptUninstallOptions 
 function notScriptManaged(action: string): ScriptUpdateRunResult {
   return {
     success: false,
-    output: `This install is not script-managed, so \`grok ${action}\` cannot proceed. Use the package manager you installed with, or reinstall via install.sh.`,
+    output: `This install is not script-managed, so \`ollama-cli ${action}\` cannot proceed. Use the package manager you installed with, or reinstall via install.sh.`,
   };
 }
 
 function getReleaseTargetForPlatformKey(key: string): ReleaseTarget | null {
   switch (key) {
     case "darwin-arm64":
-      return { key, assetName: "grok-darwin-arm64", binaryName: "grok" };
+      return { key, assetName: "ollama-cli-darwin-arm64", binaryName: "ollama-cli" };
     case "darwin-x64":
-      return { key: "darwin-arm64", assetName: "grok-darwin-arm64", binaryName: "grok" };
+      return { key: "darwin-arm64", assetName: "ollama-cli-darwin-arm64", binaryName: "ollama-cli" };
     case "linux-x64":
-      return { key, assetName: "grok-linux-x64", binaryName: "grok" };
+      return { key, assetName: "ollama-cli-linux-x64", binaryName: "ollama-cli" };
     case "windows-x64":
-      return { key, assetName: "grok-windows-x64.exe", binaryName: "grok.exe" };
+      return { key, assetName: "ollama-cli-windows-x64.exe", binaryName: "ollama-cli.exe" };
     default:
       return null;
   }
