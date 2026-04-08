@@ -507,7 +507,7 @@ ${prompt}`;
 }
 
 const CONNECT_CHANNELS: { id: string; label: string; description: string }[] = [
-  { id: "telegram", label: "Telegram", description: "Chat with Grok from Telegram" },
+  { id: "telegram", label: "Telegram", description: "Chat with ollama-cli from Telegram" },
 ];
 
 const MCP_REMOTE_FIELDS: McpEditorField[] = ["transport", "label", "url", "headers", "env"];
@@ -1477,7 +1477,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
 
       const apiKey = getApiKey();
       if (!apiKey) {
-        throw new Error("Grok API key required. Add it in the CLI or set GROK_API_KEY.");
+        throw new Error("ollama-cli does not require an API key. Make sure Ollama is running.");
       }
 
       const u = loadUserSettings();
@@ -1748,7 +1748,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       return;
     }
     if (!getApiKey()) {
-      setTelegramTokenError("Add a Grok API key first.");
+      setTelegramTokenError("Make sure Ollama is running.");
       return;
     }
     const u = loadUserSettings();
@@ -1794,7 +1794,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
       },
     ]);
     try {
-      await bridgeRef.current?.sendDm(result.userId, "Pairing approved. You can message Grok here.");
+      await bridgeRef.current?.sendDm(result.userId, "Pairing approved. You can message ollama-cli here.");
     } catch {
       /* optional DM */
     }
@@ -1803,7 +1803,7 @@ export function App({ agent, startupConfig, initialMessage, onExit }: AppProps) 
   const beginTelegramFromConnect = useCallback(() => {
     setShowConnectModal(false);
     if (!getApiKey()) {
-      setMessages((p) => [...p, { type: "assistant", content: "Add a Grok API key first.", timestamp: new Date() }]);
+      setMessages((p) => [...p, { type: "assistant", content: "Make sure Ollama is running.", timestamp: new Date() }]);
       openApiKeyModal();
       return;
     }
@@ -3569,7 +3569,9 @@ function PromptBox({
                 !showApiKeyModal &&
                 !blockPrompt
               }
-              placeholder={isProcessing ? "Queue a follow-up... (esc to interrupt)" : placeholder || "Message Grok..."}
+              placeholder={
+                isProcessing ? "Queue a follow-up... (esc to interrupt)" : placeholder || "Message Ollama..."
+              }
               textColor={t.text}
               backgroundColor={t.backgroundElement}
               placeholderColor={t.textMuted}

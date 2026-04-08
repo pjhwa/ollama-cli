@@ -217,7 +217,7 @@ export async function runScriptManagedUpdate(currentVersion: string): Promise<Sc
       installedAt: new Date().toISOString(),
     });
 
-    return { success: true, output: `Updated to Grok ${release.version}.` };
+    return { success: true, output: `Updated to ollama-cli ${release.version}.` };
   } catch (error) {
     return { success: false, output: error instanceof Error ? error.message : String(error) };
   } finally {
@@ -267,7 +267,7 @@ export async function runScriptManagedUninstall(options: ScriptUninstallOptions 
     if (!process.stdin.isTTY || !process.stdout.isTTY) {
       return { success: false, output: "Non-interactive terminal. Re-run with --force." };
     }
-    if (!(await confirm("Remove Grok from this machine?"))) {
+    if (!(await confirm("Remove ollama-cli from this machine?"))) {
       return { success: false, output: "Uninstall cancelled." };
     }
   }
@@ -276,7 +276,7 @@ export async function runScriptManagedUninstall(options: ScriptUninstallOptions 
     if (plan.pathCleanup) removePathLine(plan.pathCleanup.configFile, plan.pathCleanup.command);
     for (const p of plan.removePaths) fs.rmSync(p, { recursive: true, force: true });
     for (const d of plan.pruneDirs) removeDirIfEmpty(d);
-    return { success: true, output: "Grok uninstall complete." };
+    return { success: true, output: "ollama-cli uninstall complete." };
   } catch (error) {
     return { success: false, output: error instanceof Error ? error.message : String(error) };
   }
@@ -331,7 +331,7 @@ async function fetchReleaseJson(url: string): Promise<GitHubRelease | null> {
 
 function normalizeReleaseVersion(tagName: string): string | null {
   let version = tagName;
-  if (version.startsWith("grok-dev@")) version = version.slice("grok-dev@".length);
+  if (version.startsWith("grok-dev@")) version = version.slice("grok-dev@".length); // legacy tag format
   if (version.startsWith("v")) version = version.slice(1);
   return semverValid(version);
 }
@@ -418,7 +418,7 @@ function applyWindowsUpdate(
   });
   child.unref();
 
-  return { success: true, output: `Updated to Grok ${release.version}. Restart the CLI to use the new version.` };
+  return { success: true, output: `Updated to ollama-cli ${release.version}. Restart the CLI to use the new version.` };
 }
 
 function esc(s: string): string {

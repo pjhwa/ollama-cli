@@ -153,7 +153,7 @@ describe("runUpdate", () => {
       const actual = await vi.importActual<typeof import("./install-manager")>("./install-manager");
       return {
         ...actual,
-        runScriptManagedUpdate: vi.fn().mockResolvedValue({ success: true, output: "Updated to Grok 2.0.0." }),
+        runScriptManagedUpdate: vi.fn().mockResolvedValue({ success: true, output: "Updated to ollama-cli 2.0.0." }),
       };
     });
 

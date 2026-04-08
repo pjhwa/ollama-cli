@@ -432,10 +432,10 @@ export function createTools(
 
       tools.schedule_create = tool({
         description:
-          "Create a recurring or one-time scheduled headless Grok run. Provide a name, the instruction to run, and a cron expression for recurring schedules. Omit cron for an immediate one-time run.",
+          "Create a recurring or one-time scheduled headless ollama-cli run. Provide a name, the instruction to run, and a cron expression for recurring schedules. Omit cron for an immediate one-time run.",
         inputSchema: z.object({
           name: z.string().describe("Human-readable schedule name"),
-          instruction: z.string().describe("The prompt/instruction Grok should run headlessly"),
+          instruction: z.string().describe("The prompt/instruction ollama-cli should run headlessly"),
           cron: z.string().optional().describe("Cron expression for recurring schedules, such as '0 9 * * 1-5'"),
           model: z.string().optional().describe("Optional model override; defaults to the current selected model"),
           directory: z.string().optional().describe("Optional working directory; defaults to the current directory"),
