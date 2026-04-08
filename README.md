@@ -287,6 +287,126 @@ npm test          # vitest
 
 ---
 
+## How local model performance is improved
+
+Local models (Llama, Qwen, DeepSeek, etc.) are smaller than cloud models and benefit from explicit
+scaffolding. ollama-cli applies a four-stage **optimizer pipeline** before every LLM call, plus
+several session-level techniques.
+
+### 1. RAG — Retrieval-Augmented Generation
+
+Index your codebase once with `ollama-cli rag index`. Before each request, the optimizer queries
+the index with cosine-similarity search over TF-IDF-style bag-of-words embeddings (or
+`nomic-embed-text` when available) and injects the top-5 most relevant code chunks directly into
+the system prompt:
+
+```
+## Relevant Code Context (RAG)
+
+### src/utils/settings.ts (relevance: 87%)
+```
+
+This grounds the model in your actual code instead of relying on its training data, which
+dramatically reduces hallucinated API calls and wrong file paths.
+
+**Enable:** `ollama-cli rag index` (once per project), then RAG runs automatically.  
+**Disable per-session:** `--no-rag`
+
+---
+
+### 2. UltraPlan — pre-computed implementation plan
+
+For complex requests (≥ 120 characters containing keywords like *implement*, *refactor*,
+*migrate*, *architect*, etc.) a **fast secondary call** to the same model is made first with a
+software-architect persona:
+
+> "Produce a concise numbered implementation plan (5-10 steps). Output ONLY the plan."
+
+The resulting plan is injected as a `## ULTRAPLAN` block in the system prompt before the main
+call. This separates *planning* from *execution*, reducing the chance the model gets lost
+mid-task on multi-step coding problems — a known weakness of smaller models.
+
+**Disable per-session:** `--no-ultraplan`
+
+---
+
+### 3. CoT — Chain-of-Thought forcing
+
+A suffix is appended to every user message:
+
+> "Think step-by-step before answering. Show your reasoning, then provide the final answer."
+
+This single prompt addition reliably improves accuracy on reasoning-heavy tasks (debugging,
+algorithm design, multi-file refactors) for models that were instruction-tuned on CoT data —
+which includes most modern open-weight models. No extra inference call is required.
+
+**Disable per-session:** `--no-cot`
+
+---
+
+### 4. Thinking mode (extended reasoning)
+
+For models that expose an extended-reasoning mode (`qwen3`, `deepseek-r1`, `qwq`, `marco-o1`),
+the optimizer prepends `/think` to the user message. This instructs the model to emit a hidden
+`<think>…</think>` scratchpad before the final response. The scratchpad is stripped from
+displayed output but the reasoning quality benefit carries over to the final answer.
+
+This is equivalent to enabling the model's "extended thinking" without any API-level parameter —
+just a prompt prefix that these models are trained to respond to.
+
+**Auto-enabled** for recognized thinking models. Disable with `OLLAMA_CLI_NO_OPTIMIZER=1`.
+
+---
+
+### 5. Context compaction
+
+As a session grows, the message history is automatically **summarized** when it approaches the
+model's context limit. A structured checkpoint is generated:
+
+```
+## Goal / Constraints & Preferences / Progress / Key Decisions / Next Steps / Open Questions
+```
+
+This checkpoint replaces the older messages so the agent can continue working without losing
+task continuity — solving the context-overflow problem that causes local models to "forget" what
+they were doing.
+
+---
+
+### 6. Tool-result truncation
+
+Raw tool outputs (bash stdout, file reads, search results) are truncated to 2 000 characters
+before being appended to the message history. This prevents a single verbose tool response from
+consuming the entire context window of a local model.
+
+---
+
+### Pipeline summary
+
+```
+User prompt
+    │
+    ▼
+[1] RAG  →  inject relevant code chunks into system prompt
+    │
+    ▼
+[2] UltraPlan  →  pre-generate numbered implementation plan (complex tasks only)
+    │
+    ▼
+[3] CoT  →  append "Think step-by-step" to user message
+    │
+    ▼
+[4] Thinking mode  →  prepend /think for models that support it
+    │
+    ▼
+  LLM call (Ollama)
+```
+
+All stages can be disabled individually (`--no-cot`, `--no-ultraplan`, `--no-rag`) or entirely
+(`OLLAMA_CLI_NO_OPTIMIZER=1`).
+
+---
+
 ## Acknowledgements
 
 ollama-cli builds on the shoulders of several open-source projects and ideas.
